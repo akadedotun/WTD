@@ -1,4 +1,5 @@
 {
+  "title": "Working time directives",
   "description": "This web application streamlines user journeys by providing intuitive screens for seamless navigation, enhancing user experience and engagement.",
   "robots": {
     "index": false
@@ -6,5 +7,8 @@
   "accessibility": {
     "addBypassLinks": false,
     "ignoreReducedMotion": false
+  },
+  "icons": {
+    "icon": "/favicon.svg"
   }
 }
