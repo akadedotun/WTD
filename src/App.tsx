@@ -1680,7 +1680,7 @@ function PrototypeToggle({
   )
 }
 
-function App() {
+function PrototypeApp() {
   const [firstTime, setFirstTime] = useState(false)
   const groups = firstTime ? firstTimeGroups : initialGroups
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -1844,7 +1844,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell app-enter">
       <header className="desktop-topbar">
         <Brand />
         <PrototypeToggle firstTime={firstTime} onChange={switchUserState} />
@@ -2055,6 +2055,189 @@ function App() {
       )}
     </div>
   )
+}
+
+// Everything the first screen shows, so it appears in one go instead of
+// popping in piece by piece
+const startupAssets = [
+  "3744c.png",
+  "19f32.png",
+  "ea5f8.png",
+  "mobile-profile.png",
+  "3b443.svg",
+  "27b54.svg",
+  "c50c1.svg",
+  "bc67d.svg",
+  "e146c.svg",
+  "f2f4d.svg",
+  "2391d.svg",
+  "393b3.svg",
+  "cl897.svg",
+  "f5ea0.svg",
+  "5521d.svg",
+  "fae22.svg",
+]
+
+const useStartupReady = () => {
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    // Add ?loading to the URL to keep the skeleton on screen for review
+    if (new URLSearchParams(window.location.search).has("loading")) return
+    let cancelled = false
+    const images = startupAssets.map(
+      (name) =>
+        new Promise<void>((resolve) => {
+          const image = new Image()
+          image.onload = () => resolve()
+          image.onerror = () => resolve()
+          image.src = asset(name)
+        }),
+    )
+    const fonts = document.fonts
+      ? Promise.all([
+          document.fonts.load('400 14px "Poppins:Regular"'),
+          document.fonts.load('600 14px "Poppins:SemiBold"'),
+        ]).catch(() => undefined)
+      : Promise.resolve()
+    const wait = (ms: number) =>
+      new Promise((resolve) => window.setTimeout(resolve, ms))
+
+    // Show the skeleton for at least 500ms so it never just flickers,
+    // and never longer than 4s on a slow connection
+    Promise.race([Promise.all([...images, fonts, wait(500)]), wait(4000)]).then(
+      () => {
+        if (!cancelled) setReady(true)
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return ready
+}
+
+function SkeletonRow() {
+  return (
+    <div className="sk-row table-grid">
+      <div className="sk-row-name">
+        <span className="sk sk-line sk-w-60" />
+        <span className="sk sk-tag" />
+        <span className="sk sk-line-sm sk-w-80" />
+        <span className="sk sk-line-sm sk-w-50" />
+      </div>
+      <div className="sk-row-status">
+        <span className="sk sk-status" />
+      </div>
+      <div className="sk-row-applies">
+        <span className="sk sk-line-sm sk-w-70" />
+      </div>
+      <div className="sk-row-effective">
+        <span className="sk sk-line-sm sk-w-40" />
+      </div>
+      <div className="sk-row-change">
+        <span className="sk sk-line-sm sk-w-50" />
+        <span className="sk sk-line-sm sk-w-70" />
+      </div>
+      <div className="sk-row-edit">
+        <span className="sk sk-edit" />
+      </div>
+    </div>
+  )
+}
+
+function AppSkeleton() {
+  return (
+    <div
+      className="app-shell skeleton-shell"
+      aria-busy="true"
+      aria-label="Loading working time rules"
+    >
+      <header className="desktop-topbar">
+        <span className="sk sk-dark sk-brand" />
+        <span className="sk sk-dark sk-toggle" />
+        <span className="sk sk-dark sk-profile" />
+      </header>
+      <header className="mobile-topbar">
+        <span className="sk sk-dark sk-menu" />
+        <span className="sk sk-dark sk-brand" />
+        <span className="sk sk-dark sk-avatar" />
+        <span className="sk sk-dark sk-mobile-toggle" />
+      </header>
+      <aside className="sidebar sk-sidebar">
+        <div className="sk-nav">
+          {[70, 55, 85, 65, 45, 50].map((width) => (
+            <span
+              key={width}
+              className="sk sk-line"
+              style={{ width: `${width}%` }}
+            />
+          ))}
+          <span className="sk sk-nav-active" />
+        </div>
+        <div className="sk-sidebar-profile">
+          <span className="sk sk-circle" />
+          <span className="sk-stack">
+            <span className="sk sk-line sk-w-80" />
+            <span className="sk sk-line-sm sk-w-60" />
+          </span>
+        </div>
+      </aside>
+      <main>
+        <header className="page-header sk-header">
+          <span className="sk sk-title" />
+          <span className="sk sk-line sk-subtitle" />
+          <span className="sk-tabs">
+            <span className="sk sk-line-sm" />
+            <span className="sk sk-line-sm" />
+          </span>
+        </header>
+        <div className="page-content sk-content">
+          <span className="sk sk-heading" />
+          <div className="sk-card sk-legend">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="sk-stack">
+                <span className="sk sk-pill-sm" />
+                <span className="sk sk-line-sm sk-w-90" />
+                <span className="sk sk-line-sm sk-w-60" />
+              </div>
+            ))}
+          </div>
+          <div className="sk-card sk-filters">
+            <span className="sk sk-segment" />
+            {[72, 56, 52, 44, 72, 120].map((width, index) => (
+              <span
+                key={index}
+                className="sk sk-filter-pill"
+                style={{ width }}
+              />
+            ))}
+          </div>
+          <div className="sk-card sk-table">
+            <div className="sk-table-header table-grid">
+              {[40, 50, 70, 60, 80].map((width) => (
+                <span key={width} className="sk sk-line-sm" style={{ width }} />
+              ))}
+            </div>
+            <span className="sk-group" />
+            {[0, 1, 2].map((item) => (
+              <SkeletonRow key={item} />
+            ))}
+            <span className="sk-group" />
+            {[0, 1].map((item) => (
+              <SkeletonRow key={item} />
+            ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+function App() {
+  const ready = useStartupReady()
+  return ready ? <PrototypeApp /> : <AppSkeleton />
 }
 
 export default App
