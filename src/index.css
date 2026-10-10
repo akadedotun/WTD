@@ -2212,7 +2212,7 @@ main {
     bottom: 16px !important;
     left: 16px;
     width: auto;
-    box-shadow: 0 0 0 100vmax rgb(15 15 40 / 35%);
+    box-shadow: 0 14px 36px rgb(15 15 40 / 18%);
   }
 
   .status-cell .status-dropdown,

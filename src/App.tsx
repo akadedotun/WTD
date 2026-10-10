@@ -1888,10 +1888,10 @@ function PrototypeApp() {
             <span />
             <span />
           </button>
-          <span className="mobile-breadcrumb">Settings / Compliance</span>
+          <span className="mobile-breadcrumb">Compliance</span>
           <h1>
-            <span className="desktop-heading">Working time directives</span>
-            <span className="mobile-heading">Working time rules</span>
+            <span className="desktop-heading">Working Time Directive</span>
+            <span className="mobile-heading">Working Time Directive</span>
           </h1>
           <p className="desktop-subtitle">
             Control which working time rules Rotageek checks when shifts are
