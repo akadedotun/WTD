@@ -17,7 +17,10 @@ type Rule = {
   locked?: boolean
   lockNote?: string
   notice?: string
+  // Set for display when a change is waiting for its date
   scheduled?: boolean
+  // A status change that starts on a future date (seed data)
+  scheduledChange?: ScheduledChange
   effective: string
   lastChange: string
   changedBy: string
@@ -37,6 +40,9 @@ type RuleEdits = {
   effectiveDate?: string
 }
 
+// A status change that waits for its date, e.g. Warn -> Block from 1 Nov 2026
+type ScheduledChange = { status: Status; date: string }
+
 type SavedChange = {
   rule: Rule
   status: Status
@@ -45,6 +51,8 @@ type SavedChange = {
   previousEdits?: RuleEdits
   statusOnly?: boolean
   cancelledSchedule?: boolean
+  scheduledChange?: ScheduledChange
+  previousSchedule?: ScheduledChange
   previousMeta?: ChangeMeta
 }
 
@@ -65,13 +73,58 @@ const lastChangeValue = (value: string) => {
   return (2000 + year) * 10000 + month * 100 + day
 }
 
-const withoutCancelledSchedule = (
-  rule: Rule,
-  cancelledSchedules: Record<string, boolean>,
-): Rule =>
-  rule.scheduled && cancelledSchedules[rule.id]
-    ? { ...rule, scheduled: false, notice: undefined, effective: "Live" }
-    : rule
+// Local date as "2026-10-11", comparable with date-input values
+const todayIso = () => {
+  const today = new Date()
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(today.getDate()).padStart(2, "0")}`
+}
+
+// "2026-11-01" -> "1 Nov 2026"
+const formatLongDate = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number)
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ]
+  return `${day} ${months[month - 1]} ${year}`
+}
+
+const scheduleNotice = (change: ScheduledChange) =>
+  `Changes to ${
+    change.status.charAt(0).toUpperCase() + change.status.slice(1)
+  } from ${formatLongDate(change.date)}`
+
+const seedSchedules = (groups: RuleGroup[]) =>
+  Object.fromEntries(
+    groups
+      .flatMap((group) => group.rules)
+      .filter((rule) => rule.scheduledChange)
+      .map((rule) => [rule.id, rule.scheduledChange!]),
+  ) as Record<string, ScheduledChange>
+
+// Shows a waiting change on the rule: green clock note + its start date
+const withSchedule = (rule: Rule, change?: ScheduledChange): Rule =>
+  change
+    ? {
+        ...rule,
+        scheduled: true,
+        notice: scheduleNotice(change),
+        effective: formatEffectiveDate(change.date),
+      }
+    : { ...rule, scheduled: false }
 
 const formatAppliesTo = (countries: Country[]) => {
   if (countries.includes("UK") && countries.includes("ROI")) {
@@ -221,9 +274,8 @@ const initialGroups: RuleGroup[] = [
         statutory: true,
         locked: true,
         lockNote: "Cannot be turned off.",
-        notice: "Changes to Block from 1 Nov 2026",
-        scheduled: true,
-        effective: "1 Nov 26",
+        scheduledChange: { status: "block", date: "2026-11-01" },
+        effective: "Live",
         lastChange: "2/10/26",
         changedBy: "Tom Reilly",
       },
@@ -321,8 +373,7 @@ const firstTimeGroups: RuleGroup[] = initialGroups.map((group) => ({
   ...group,
   rules: group.rules.map((rule) => ({
     ...rule,
-    scheduled: false,
-    notice: rule.scheduled ? undefined : rule.notice,
+    scheduledChange: undefined,
     effective: "Live",
     lastChange: todayShort(),
     changedBy: "Rotageek",
@@ -383,16 +434,6 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           </div>
           <button className="active">Compliance</button>
         </nav>
-        <div className="profile">
-          <img className="nav-rule" src={asset("3b443.svg")} alt="" />
-          <div className="profile-details">
-            <img src={asset("ea5f8.png")} alt="Cremilda Moreno" />
-            <div>
-              <strong>Cremilda Moreno</strong>
-              <span>Compliance Admin</span>
-            </div>
-          </div>
-        </div>
       </aside>
     </>
   )
@@ -499,7 +540,6 @@ function RuleTable({
   statuses,
   groups,
   ruleEdits,
-  cancelledSchedules,
   onStatusSelect,
   onEdit,
 }: {
@@ -508,7 +548,6 @@ function RuleTable({
   filter: StateFilter
   statuses: Record<string, Status>
   ruleEdits?: Record<string, RuleEdits>
-  cancelledSchedules: Record<string, boolean>
   onStatusSelect: (rule: Rule, status: Status) => void
   onEdit: (rule: Rule) => void
 }) {
@@ -529,7 +568,6 @@ function RuleTable({
         .map((group) => ({
           ...group,
           rules: group.rules
-            .map((rule) => withoutCancelledSchedule(rule, cancelledSchedules))
             .filter((rule) => {
               const status = statuses[rule.id] ?? rule.status
               const countries = scopeCountries(
@@ -547,7 +585,7 @@ function RuleTable({
             }),
         }))
         .filter((group) => group.rules.length > 0),
-    [cancelledSchedules, country, filter, groups, resolvedRuleEdits, statuses],
+    [country, filter, groups, resolvedRuleEdits, statuses],
   )
 
   if (visibleGroups.length === 0) {
@@ -581,8 +619,9 @@ function RuleTable({
               const countries =
                 resolvedRuleEdits[rule.id]?.countries ?? rule.countries
               const edit = resolvedRuleEdits[rule.id]
-              const effective =
-                edit?.takesEffect === "now"
+              const effective = rule.scheduled
+                ? rule.effective
+                : edit?.takesEffect === "now"
                   ? "Live"
                   : edit?.effectiveDate
                     ? formatEffectiveDate(edit.effectiveDate)
@@ -741,19 +780,16 @@ function ActivityTable({
   statuses,
   groups,
   ruleEdits,
-  cancelledSchedules,
 }: {
   groups: RuleGroup[]
   country: "All countries" | Country
   filter: StateFilter
   statuses: Record<string, Status>
   ruleEdits?: Record<string, RuleEdits>
-  cancelledSchedules: Record<string, boolean>
 }) {
   const resolvedRuleEdits = ruleEdits ?? {}
   const rules = groups
     .flatMap((group) => group.rules)
-    .map((rule) => withoutCancelledSchedule(rule, cancelledSchedules))
     .filter((rule) => {
       const status = statuses[rule.id] ?? rule.status
       const countries = scopeCountries(
@@ -1639,6 +1675,12 @@ function SuccessToast({
           Scheduled change cancelled. {change.rule.name} stays on{" "}
           <strong className="capitalize">{change.status}</strong>.
         </span>
+      ) : change.scheduledChange ? (
+        <span>
+          {change.rule.name} will change to{" "}
+          <strong className="capitalize">{change.status}</strong>
+          {scope} from {formatLongDate(change.scheduledChange.date)}.
+        </span>
       ) : (
         <span>
           {change.rule.name} set to{" "}
@@ -1692,8 +1734,9 @@ function PrototypeApp() {
   const [statuses, setStatuses] = useState<Record<string, Status>>({})
   const [ruleEdits, setRuleEdits] = useState<Record<string, RuleEdits>>({})
   const [editingRule, setEditingRule] = useState<Rule | null>(null)
-  const [cancelledSchedules, setCancelledSchedules] =
-    useState<Record<string, boolean>>({})
+  const [schedules, setSchedules] = useState<Record<string, ScheduledChange>>(
+    () => seedSchedules(initialGroups),
+  )
   const [changeMeta, setChangeMeta] = useState<Record<string, ChangeMeta>>({})
   // Rules carry who changed them last, including changes made in this session
   const displayGroups = useMemo(
@@ -1701,11 +1744,21 @@ function PrototypeApp() {
       groups.map((group) => ({
         ...group,
         rules: group.rules.map((rule) =>
-          changeMeta[rule.id] ? { ...rule, ...changeMeta[rule.id] } : rule,
+          withSchedule(
+            changeMeta[rule.id] ? { ...rule, ...changeMeta[rule.id] } : rule,
+            schedules[rule.id],
+          ),
         ),
       })),
-    [changeMeta, groups],
+    [changeMeta, groups, schedules],
   )
+  const setSchedule = (ruleId: string, change?: ScheduledChange) =>
+    setSchedules((values) => {
+      const next = { ...values }
+      if (change) next[ruleId] = change
+      else delete next[ruleId]
+      return next
+    })
   const recordChange = (ruleId: string) =>
     setChangeMeta((values) => ({
       ...values,
@@ -1746,25 +1799,59 @@ function PrototypeApp() {
       },
       previousStatus: statuses[rule.id] ?? rule.status,
       previousEdits: existingEdits,
+      previousSchedule: schedules[rule.id],
       previousMeta: changeMeta[rule.id],
     })
     recordChange(rule.id)
+    // Applying the scheduled status now makes the schedule pointless
+    if (schedules[rule.id]?.status === status) setSchedule(rule.id)
     setStatuses((values) => ({ ...(values ?? {}), [rule.id]: status }))
+    // A dropdown change applies immediately, so the rule is Live from now
+    setRuleEdits((values) => ({
+      ...values,
+      [rule.id]: {
+        ...(existingEdits ?? {
+          countries: rule.countries,
+          locations: ["All locations"],
+          employeeGroups: ["All employees"],
+        }),
+        takesEffect: "now",
+        effectiveDate: undefined,
+      },
+    }))
     setPendingStatusChange(null)
   }
 
   const saveRule = (status: Status, edits: RuleEdits) => {
     if (!editingRule) return
+    const current = statuses[editingRule.id] ?? editingRule.status
+    const existing = schedules[editingRule.id]
+    // A new status on a future date waits: the rule keeps its current
+    // status and shows "Changes to … from …" until then
+    const scheduledChange =
+      status !== current &&
+      edits.takesEffect === "date" &&
+      edits.effectiveDate &&
+      edits.effectiveDate > todayIso()
+        ? { status, date: edits.effectiveDate }
+        : undefined
     setLastSavedChange({
       rule: editingRule,
       status,
       edits,
-      previousStatus: statuses[editingRule.id] ?? editingRule.status,
+      previousStatus: current,
       previousEdits: resolvedRuleEdits[editingRule.id],
+      scheduledChange,
+      previousSchedule: existing,
       previousMeta: changeMeta[editingRule.id],
     })
     recordChange(editingRule.id)
-    setStatuses((values) => ({ ...values, [editingRule.id]: status }))
+    if (scheduledChange) {
+      setSchedule(editingRule.id, scheduledChange)
+    } else {
+      if (existing?.status === status) setSchedule(editingRule.id)
+      setStatuses((values) => ({ ...values, [editingRule.id]: status }))
+    }
     setRuleEdits((values) => ({
       ...(values ?? {}),
       [editingRule.id]: edits,
@@ -1777,7 +1864,7 @@ function PrototypeApp() {
     setFirstTime(value)
     setStatuses({})
     setRuleEdits({})
-    setCancelledSchedules({})
+    setSchedules(value ? {} : seedSchedules(initialGroups))
     setChangeMeta({})
     setEditingRule(null)
     setLastSavedChange(null)
@@ -1787,12 +1874,20 @@ function PrototypeApp() {
 
   const scheduledCount = displayGroups
     .flatMap((group) => group.rules)
-    .filter((rule) => rule.scheduled && !cancelledSchedules[rule.id]).length
+    .filter((rule) => rule.scheduled).length
 
   const cancelSchedule = () => {
     if (!editingRule) return
     const status = statuses[editingRule.id] ?? editingRule.status
-    setCancelledSchedules((values) => ({ ...values, [editingRule.id]: true }))
+    const edits = resolvedRuleEdits[editingRule.id]
+    setSchedule(editingRule.id)
+    // The rule no longer waits for a date
+    if (edits?.takesEffect === "date") {
+      setRuleEdits((values) => ({
+        ...values,
+        [editingRule.id]: { ...edits, takesEffect: "now", effectiveDate: undefined },
+      }))
+    }
     setLastSavedChange({
       rule: editingRule,
       status,
@@ -1805,6 +1900,7 @@ function PrototypeApp() {
       previousStatus: status,
       previousEdits: resolvedRuleEdits[editingRule.id],
       cancelledSchedule: true,
+      previousSchedule: schedules[editingRule.id],
       previousMeta: changeMeta[editingRule.id],
     })
     recordChange(editingRule.id)
@@ -1821,15 +1917,7 @@ function PrototypeApp() {
       else delete next[rule.id]
       return next
     })
-    if (lastSavedChange.cancelledSchedule) {
-      setCancelledSchedules((values) => {
-        const next = { ...values }
-        delete next[rule.id]
-        return next
-      })
-      setLastSavedChange(null)
-      return
-    }
+    setSchedule(rule.id, lastSavedChange.previousSchedule)
     setStatuses((values) => ({
       ...(values ?? {}),
       [rule.id]: previousStatus,
@@ -2003,7 +2091,6 @@ function PrototypeApp() {
               filter={filter}
               statuses={statuses}
               ruleEdits={resolvedRuleEdits}
-              cancelledSchedules={cancelledSchedules}
               onStatusSelect={(rule, status) =>
                 setPendingStatusChange({ rule, status })
               }
@@ -2016,7 +2103,6 @@ function PrototypeApp() {
               filter={filter}
               statuses={statuses}
               ruleEdits={resolvedRuleEdits}
-              cancelledSchedules={cancelledSchedules}
             />
           )}
         </div>
@@ -2062,9 +2148,7 @@ function PrototypeApp() {
 const startupAssets = [
   "3744c.png",
   "19f32.png",
-  "ea5f8.png",
   "mobile-profile.png",
-  "3b443.svg",
   "27b54.svg",
   "c50c1.svg",
   "bc67d.svg",
@@ -2175,13 +2259,6 @@ function AppSkeleton() {
             />
           ))}
           <span className="sk sk-nav-active" />
-        </div>
-        <div className="sk-sidebar-profile">
-          <span className="sk sk-circle" />
-          <span className="sk-stack">
-            <span className="sk sk-line sk-w-80" />
-            <span className="sk sk-line-sm sk-w-60" />
-          </span>
         </div>
       </aside>
       <main>
